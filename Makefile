@@ -1,4 +1,4 @@
-all: test ## Make all
+all: install-deps dlib models test ## Make all
 
 clean: ## Cleans all build artifacts
 	@rm -rf dlib*

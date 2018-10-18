@@ -24,7 +24,6 @@ make install-deps
 Latest versions of Ubuntu and Debian provide dlib packages v19.10 or greater so we can just run:
 
 ```bash
-# Ubuntu
 sudo apt-get install libdlib-dev libopenblas-dev libjpeg-turbo8-dev
 ```
 
