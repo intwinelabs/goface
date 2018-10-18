@@ -1,0 +1,7 @@
+# Ignore models
+models/*
+
+# Ignore test image
+tests/*
+tests/*/
+goface_tests.tar.gz
