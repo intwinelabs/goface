@@ -41,7 +41,7 @@ You can also download these from the [dlib-models](https://github.com/davisking/
 ```bash
 mkdir models && cd models
 wget https://github.com/davisking/dlib-models/raw/master/shape_predictor_5_face_landmarks.dat.bz2
-2
+bunzip2 shape_predictor_5_face_landmarks.dat.bz2
 wget https://github.com/davisking/dlib-models/raw/master/dlib_face_recognition_resnet_model_v1.dat.bz2
 bunzip2 dlib_face_recognition_resnet_model_v1.dat.bz2
 ```
@@ -62,6 +62,13 @@ go get github.com/intwineapp/goface
 
 ## Test
 
+First run:
+
+```bash
+make all
+```
+
+Subsequent runs:
 ```bash
 make test
 ```
