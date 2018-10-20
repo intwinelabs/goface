@@ -4,27 +4,29 @@
 #include <dlib/image_loader/image_loader.h>
 #include "jpeg_mem_loader.h"
 
-// Based on dlib's JPEG loader and libjpeg example.
+using namespace dlib;
+
+// Based on dlib's JPEG loader and libjpeg example
 struct jpeg_loader_error_mgr {
 	jpeg_error_mgr pub;  // "public" fields
 	jmp_buf setjmp_buffer;  // For return to caller
 };
 
 static void jpeg_loader_error_exit(j_common_ptr cinfo) {
-	// cinfo->err really points to a jpeg_loader_error_mgr struct, so coerce pointer.
+	// cinfo->err really points to a jpeg_loader_error_mgr struct, so coerce pointer
 	jpeg_loader_error_mgr* myerr = (jpeg_loader_error_mgr*)cinfo->err;
 	// Return control to the setjmp point.
 	longjmp(myerr->setjmp_buffer, 1);
 }
 
 static void jpeg_loader_emit_message(j_common_ptr cinfo, int msg_level) {
-	// Just exit on any warning because file is probably corrupted.
+	// Just exit on any warning because file is probably corrupted
 	if (msg_level < 0)
 		jpeg_loader_error_exit(cinfo);
 }
 
-// From memory JPEG loader because dlib lacks one.
-void load_mem_jpeg(dlib::matrix<dlib::rgb_pixel>& img, const uint8_t* img_data, int len) {
+// From memory JPEG loader because dlib lacks one
+void load_mem_jpeg(matrix<rgb_pixel>& img, const uint8_t* img_data, int len) {
 	jpeg_decompress_struct cinfo;
 
 	jpeg_loader_error_mgr jerr;
@@ -35,7 +37,7 @@ void load_mem_jpeg(dlib::matrix<dlib::rgb_pixel>& img, const uint8_t* img_data, 
 		char buffer[JMSG_LENGTH_MAX];
 		(jerr.pub.format_message)((j_common_ptr)&cinfo, buffer);
 		jpeg_destroy_decompress(&cinfo);
-		throw dlib::image_load_error(std::string("jpeg_mem_loader: decode error: ") + buffer);
+		throw image_load_error(std::string("jpeg_mem_loader: decode error: ") + buffer);
 	}
 
 	jpeg_create_decompress(&cinfo);
@@ -49,7 +51,7 @@ void load_mem_jpeg(dlib::matrix<dlib::rgb_pixel>& img, const uint8_t* img_data, 
 
 	if (cinfo.output_components != 3) {
 		jpeg_destroy_decompress(&cinfo);
-		throw dlib::image_load_error("jpeg_mem_loader: unsupported pixel size");
+		throw image_load_error("jpeg_mem_loader: unsupported pixel size");
 	}
 
 	img.set_size(cinfo.output_height, cinfo.output_width);

@@ -2,11 +2,14 @@
 #include <dlib/dnn.h>
 #include <dlib/image_loader/image_loader.h>
 #include <dlib/image_processing/frontal_face_detector.h>
+#include <dlib/image_transforms.h>
+#include <stdio.h>
 #include "facerec.h"
 #include "jpeg_mem_loader.h"
 #include "classify.h"
 
 using namespace dlib;
+using namespace std;
 
 template <template <int, template <typename> class, int, typename> class block, int N, template <typename> class BN, typename SUBNET>
 using residual = add_prev1<block<N, BN, 1, tag1<SUBNET>>>;
@@ -33,7 +36,16 @@ using alevel3 = ares<64, ares<64, ares<64, ares_down<64, SUBNET>>>>;
 template <typename SUBNET>
 using alevel4 = ares<32, ares<32, ares<32, SUBNET>>>;
 
-using anet_type = loss_metric<fc_no_bias<128, avg_pool_everything<alevel0<alevel1<alevel2<alevel3<alevel4<max_pool<3, 3, 2, 2, relu<affine<con<32, 7, 7, 2, 2, input_rgb_image_sized<150>>>>>>>>>>>>>;
+using anet_type = loss_metric<fc_no_bias<128,avg_pool_everything<
+                            alevel0<
+                            alevel1<
+                            alevel2<
+                            alevel3<
+                            alevel4<
+                            max_pool<3,3,2,2,relu<affine<con<32,7,7,2,2,
+                            input_rgb_image
+                            >>>>>>>>>>>>;
+
 static const size_t RECT_LEN = 4;
 static const size_t DESCR_LEN = 128;
 static const size_t RECT_SIZE = RECT_LEN * sizeof(long);
@@ -46,30 +58,36 @@ class FaceRec
 	{
 		detector_ = get_frontal_face_detector();
 
-		std::string dir = model_dir;
-		std::string shape_predictor_path = dir + "/shape_predictor_5_face_landmarks.dat";
-		std::string resnet_path = dir + "/dlib_face_recognition_resnet_model_v1.dat";
+		string dir = model_dir;
+		string shape_predictor_path = dir + "/shape_predictor_5_face_landmarks.dat";
+		string resnet_path = dir + "/dlib_face_recognition_resnet_model_v1.dat";
 
 		deserialize(shape_predictor_path) >> sp_;
 		deserialize(resnet_path) >> net_;
 	}
 
-	std::pair<std::vector<rectangle>, std::vector<descriptor>>
+	pair<std::vector<rectangle>, std::vector<descriptor>>
 	Recognize(const matrix<rgb_pixel> &img, int max_faces)
 	{
 		std::vector<rectangle> rects;
 		std::vector<descriptor> descrs;
-
+		FILE * lFile;
+		lFile = fopen("/tmp/out.log","w");
+		
 		{
-			std::lock_guard<std::mutex> lock(detector_mutex_);
+			lock_guard<std::mutex> lock(detector_mutex_);
 			rects = detector_(img);
 		}
-
+		fprintf(lFile, "%lu\n", rects.size());
+		
 		// Short circuit.
 		if (rects.size() == 0 || (max_faces > 0 && rects.size() > (size_t)max_faces))
-			return {std::move(rects), std::move(descrs)};
+		{
+			fclose(lFile);	
+			return {move(rects), move(descrs)};
+		}
 
-		std::sort(rects.begin(), rects.end());
+		sort(rects.begin(), rects.end());
 
 		std::vector<matrix<rgb_pixel>> face_imgs;
 		for (const auto &rect : rects)
@@ -77,27 +95,50 @@ class FaceRec
 			auto shape = sp_(img, rect);
 			matrix<rgb_pixel> face_chip;
 			extract_image_chip(img, get_face_chip_details(shape, 150, 0.25), face_chip);
-			face_imgs.push_back(std::move(face_chip));
+			face_imgs.push_back(move(face_chip));
 		}
-
+		
+		
 		{
-			std::lock_guard<std::mutex> lock(net_mutex_);
-			descrs = net_(face_imgs);
-		}
+			// The face recognition accuracy is being improved by jittering the face descriptors.
+			// In particular, to get 99.38% on the LFW benchmark you need to use the jitter_image()
+			// routine to compute the descriptors
+			fprintf(lFile, "%lu\n", face_imgs.size());
+			for (size_t i = 0; i < face_imgs.size(); ++i)
+			{
+				// All this does is make 100 copies of img, all slightly jittered by being zoomed,
+				// rotated, and translated a little bit differently. They are also randomly mirrored.
+				thread_local dlib::rand rnd;
+				
+				std::vector<matrix<rgb_pixel>> jittered_imgs;
+				for (int i = 0; i < 100; ++i)
+				{
+					jittered_imgs.push_back(jitter_image(face_imgs[i],rnd));
+					fprintf(lFile, "%d\n", i);
+				}
 
-		return {std::move(rects), std::move(descrs)};
+				{
+					lock_guard<std::mutex> lock(net_mutex_);
+					descrs.push_back(mean(mat(net_(jittered_imgs))));
+					fprintf(lFile, "%s\n", "push_back");
+				}
+
+			}
+		}
+		fclose(lFile);
+		return {move(rects), move(descrs)};
 	}
 
-	void SetSamples(std::vector<descriptor> &&samples, std::unordered_map<int, int> &&cats)
+	void SetSamples(std::vector<descriptor> &&samples, unordered_map<int, int> &&cats)
 	{
-		std::unique_lock<std::shared_mutex> lock(samples_mutex_);
-		samples_ = std::move(samples);
-		cats_ = std::move(cats);
+		unique_lock<std::shared_mutex> lock(samples_mutex_);
+		samples_ = move(samples);
+		cats_ = move(cats);
 	}
 
 	int Classify(const descriptor &test_sample)
 	{
-		std::shared_lock<std::shared_mutex> lock(samples_mutex_);
+		shared_lock<std::shared_mutex> lock(samples_mutex_);
 		if (samples_.size() == 0)
 			return -1;
 		return classify(samples_, cats_, test_sample);
@@ -111,7 +152,7 @@ class FaceRec
 	shape_predictor sp_;
 	anet_type net_;
 	std::vector<descriptor> samples_;
-	std::unordered_map<int, int> cats_;
+	unordered_map<int, int> cats_;
 };
 
 // Plain C interface for Go.
@@ -129,7 +170,7 @@ facerec *facerec_init(const char *model_dir)
 		rec->err_str = strdup(e.what());
 		rec->err_code = SERIALIZATION_ERROR;
 	}
-	catch (std::exception &e)
+	catch (exception &e)
 	{
 		rec->err_str = strdup(e.what());
 		rec->err_code = UNKNOWN_ERROR;
@@ -147,7 +188,7 @@ faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int m
 	try
 	{
 		load_mem_jpeg(img, img_data, len);
-		std::tie(rects, descrs) = cls->Recognize(img, max_faces);
+		tie(rects, descrs) = cls->Recognize(img, max_faces);
 	}
 	catch (image_load_error &e)
 	{
@@ -155,7 +196,7 @@ faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int m
 		ret->err_code = IMAGE_LOAD_ERROR;
 		return ret;
 	}
-	catch (std::exception &e)
+	catch (exception &e)
 	{
 		ret->err_str = strdup(e.what());
 		ret->err_code = UNKNOWN_ERROR;
@@ -195,15 +236,15 @@ void facerec_set_samples(
 	for (int i = 0; i < len; i++)
 	{
 		descriptor sample = mat(c_samples + i * DESCR_LEN, DESCR_LEN, 1);
-		samples.push_back(std::move(sample));
+		samples.push_back(move(sample));
 	}
-	std::unordered_map<int, int> cats;
+	unordered_map<int, int> cats;
 	cats.reserve(len);
 	for (int i = 0; i < len; i++)
 	{
 		cats[i] = c_cats[i];
 	}
-	cls->SetSamples(std::move(samples), std::move(cats));
+	cls->SetSamples(move(samples), move(cats));
 }
 
 int facerec_classify(facerec *rec, const float *c_test_sample)

@@ -1,14 +1,17 @@
 #include <dlib/graph_utils.h>
 #include "classify.h"
 
+using namespace dlib;
+using namespace std;
+
 int classify(
 	const std::vector<descriptor>& samples,
-	const std::unordered_map<int, int>& cats,
+	const unordered_map<int, int>& cats,
 	const descriptor& test_sample
 ) {
-	std::vector<std::pair<int, double>> distances;
+	std::vector<pair<int, double>> distances;
 	distances.reserve(samples.size());
-	auto dist_func = dlib::squared_euclidean_distance();
+	auto dist_func = squared_euclidean_distance();
 	int idx = 0;
 	for (const auto& sample : samples) {
 		double dist = dist_func(sample, test_sample);
@@ -16,13 +19,13 @@ int classify(
 		idx++;
 	}
 
-	std::sort(
+	sort(
 		distances.begin(), distances.end(),
 		[](const auto a, const auto b) { return a.second < b.second; }
 	);
 
-	int len = std::min((int)distances.size(), 10);
-	std::unordered_map<int, std::pair<int, double>> hits_by_cat;
+	int len = min((int)distances.size(), 10);
+	unordered_map<int, pair<int, double>> hits_by_cat;
 	for (int i = 0; i < len; i++) {
 		int idx = distances[i].first;
 		double dist = distances[i].second;
@@ -40,7 +43,7 @@ int classify(
 		}
 	}
 
-	auto hit = std::max_element(
+	auto hit = max_element(
 		hits_by_cat.begin(), hits_by_cat.end(),
 		[](const auto a, const auto b) {
 			auto hits1 = a.second.first;
