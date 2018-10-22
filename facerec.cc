@@ -67,23 +67,19 @@ class FaceRec
 	}
 
 	pair<std::vector<rectangle>, std::vector<descriptor>>
-	Recognize(const matrix<rgb_pixel> &img, int max_faces)
+	Recognize(const matrix<rgb_pixel> &img, int max_faces, int jitter)
 	{
 		std::vector<rectangle> rects;
 		std::vector<descriptor> descrs;
-		FILE * lFile;
-		lFile = fopen("/tmp/out.log","w");
 		
 		{
 			lock_guard<std::mutex> lock(detector_mutex_);
 			rects = detector_(img);
 		}
-		fprintf(lFile, "%lu\n", rects.size());
 		
 		// Short circuit.
 		if (rects.size() == 0 || (max_faces > 0 && rects.size() > (size_t)max_faces))
 		{
-			fclose(lFile);	
 			return {move(rects), move(descrs)};
 		}
 
@@ -103,20 +99,17 @@ class FaceRec
 			// The face recognition accuracy is being improved by jittering the face descriptors.
 			// In particular, to get 99.38% on the LFW benchmark you need to use the jitter_image()
 			// routine to compute the descriptors
-			fprintf(lFile, "%lu\n", face_imgs.size());
 			for (size_t i = 0; i < face_imgs.size(); ++i)
 			{
 				// All this does is make 100 copies of img, all slightly jittered by being zoomed,
 				// rotated, and translated a little bit differently. They are also randomly mirrored.
 				{
 					lock_guard<std::mutex> lock(net_mutex_);
-					descrs.push_back(mean(mat(net_(jitter_face(face_imgs[i])))));
-					fprintf(lFile, "%s\n", "push_back");
+					descrs.push_back(mean(mat(net_(jitter_face(face_imgs[i], jitter)))));
 				}
 
 			}
 		}
-		fclose(lFile);
 		return {move(rects), move(descrs)};
 	}
 
@@ -146,7 +139,7 @@ class FaceRec
 	unordered_map<int, int> cats_;
 
 	std::vector<matrix<rgb_pixel>> jitter_face(
-		const matrix<rgb_pixel>& img
+		const matrix<rgb_pixel>& img, int jitter
 	)
 	{
 		// All this function does is make 100 copies of img, all slightly jittered by being
@@ -155,7 +148,7 @@ class FaceRec
 		thread_local dlib::rand rnd;
 
 		std::vector<matrix<rgb_pixel>> crops; 
-		for (int i = 0; i < 100; ++i)
+		for (int i = 0; i < jitter; ++i)
 			crops.push_back(jitter_image(img,rnd));
 
 		return crops;
@@ -185,7 +178,7 @@ facerec *facerec_init(const char *model_dir)
 	return rec;
 }
 
-faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int max_faces)
+faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int max_faces, int jitter)
 {
 	faceret *ret = (faceret *)calloc(1, sizeof(faceret));
 	FaceRec *cls = (FaceRec *)(rec->cls);
@@ -195,7 +188,7 @@ faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int m
 	try
 	{
 		load_mem_jpeg(img, img_data, len);
-		tie(rects, descrs) = cls->Recognize(img, max_faces);
+		tie(rects, descrs) = cls->Recognize(img, max_faces, jitter);
 	}
 	catch (image_load_error &e)
 	{

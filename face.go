@@ -9,6 +9,7 @@ import "C"
 import (
 	"image"
 	"io/ioutil"
+	"math"
 	"os"
 	"unsafe"
 )
@@ -59,7 +60,7 @@ func NewRecognizer(modelDir string) (rec *Recognizer, err error) {
 }
 
 // recognize is the private recognize function
-func (rec *Recognizer) recognize(imgData []byte, maxFaces int) (faces []Face, err error) {
+func (rec *Recognizer) recognize(imgData []byte, maxFaces, jitter int) (faces []Face, err error) {
 	if len(imgData) == 0 {
 		err = ImageLoadError("Empty image")
 		return
@@ -67,7 +68,8 @@ func (rec *Recognizer) recognize(imgData []byte, maxFaces int) (faces []Face, er
 	cImgData := (*C.uint8_t)(&imgData[0])
 	cLen := C.int(len(imgData))
 	cMaxFaces := C.int(maxFaces)
-	ret := C.facerec_recognize(rec.ptr, cImgData, cLen, cMaxFaces)
+	cJitter := C.int(jitter)
+	ret := C.facerec_recognize(rec.ptr, cImgData, cLen, cMaxFaces, cJitter)
 	defer C.free(unsafe.Pointer(ret))
 
 	if ret.err_str != nil {
@@ -109,7 +111,7 @@ func (rec *Recognizer) recognize(imgData []byte, maxFaces int) (faces []Face, er
 }
 
 // recognizeFile is the private file recognize faces private function
-func (rec *Recognizer) recognizeFile(imgPath string, maxFaces int) (face []Face, err error) {
+func (rec *Recognizer) recognizeFile(imgPath string, maxFaces, jitter int) (face []Face, err error) {
 	fd, err := os.Open(imgPath)
 	if err != nil {
 		return
@@ -118,26 +120,27 @@ func (rec *Recognizer) recognizeFile(imgPath string, maxFaces int) (face []Face,
 	if err != nil {
 		return
 	}
-	return rec.recognize(imgData, maxFaces)
+	return rec.recognize(imgData, maxFaces, jitter)
 }
 
-// Recognize takes the bytes of a JPEG and returns all faces found on the provided image, sorted from
-// left to right. It returns a empty slice if there are no faces, error is returned if there was
-// a error while decoding/processing image. This is thread-safe.
-func (rec *Recognizer) Recognize(imgData []byte) (faces []Face, err error) {
+// Recognize takes the bytes of a JPEG and a int to specify the number of times to jitter the faces,
+//  and returns all faces found on the provided image, sorted from left to right. It returns a empty
+// slice if there are no faces, error is returned if there was a error while decoding/processing image.
+// This is thread-safe.
+func (rec *Recognizer) Recognize(imgData []byte, jitter int) (faces []Face, err error) {
 	if !rec.closed {
-		return rec.recognize(imgData, 0)
+		return rec.recognize(imgData, 0, jitter)
 	}
 	err = closedError
 	return
 }
 
-// RecognizeSingle takes the bytes of a JPEG and returns a face if it's the only face on the image
-// otherwise it returns nil. This is thread-safe.
-func (rec *Recognizer) RecognizeSingle(imgData []byte) (face *Face, err error) {
+// RecognizeSingle takes the bytes of a JPEGand a int to specify the number of times to jitter the faces,
+//  and returns a face if it's the only face on the image otherwise it returns nil. This is thread-safe.
+func (rec *Recognizer) RecognizeSingle(imgData []byte, jitter int) (face *Face, err error) {
 	var faces []Face
 	if !rec.closed {
-		faces, err = rec.recognize(imgData, 1)
+		faces, err = rec.recognize(imgData, 1, jitter)
 		if err != nil || len(faces) != 1 {
 			return
 		}
@@ -148,23 +151,24 @@ func (rec *Recognizer) RecognizeSingle(imgData []byte) (face *Face, err error) {
 	return
 }
 
-// RecognizeFile takes the path of a JPEG and returns all faces found on the provided image, sorted from
-// left to right. It returns a empty slice if there are no faces, error is returned if there was
-// a error while decoding/processing image. This is thread-safe.
-func (rec *Recognizer) RecognizeFile(imgPath string) (faces []Face, err error) {
+// RecognizeFile takes the path of a JPEG and a int to specify the number of times to jitter the faces,
+// and returns all faces found on the provided image, sorted from left to right. It returns a empty
+// slice if there are no faces, error is returned if there was a error while decoding/processing image.
+// This is thread-safe.
+func (rec *Recognizer) RecognizeFile(imgPath string, jitter int) (faces []Face, err error) {
 	if !rec.closed {
-		return rec.recognizeFile(imgPath, 0)
+		return rec.recognizeFile(imgPath, 0, jitter)
 	}
 	err = closedError
 	return
 }
 
-// RecognizeSingleFile takes the bytes of a JPEG and returns a face if it's the only face on the image
-// otherwise it returns nil. This is thread-safe.
-func (rec *Recognizer) RecognizeSingleFile(imgPath string) (face *Face, err error) {
+// RecognizeSingleFile takes the bytes of a JPEG and a int to specify the number of times to jitter the faces,
+// and returns a face if it's the only face on the image otherwise it returns nil. This is thread-safe.
+func (rec *Recognizer) RecognizeSingleFile(imgPath string, jitter int) (face *Face, err error) {
 	var faces []Face
 	if !rec.closed {
-		faces, err = rec.recognizeFile(imgPath, 1)
+		faces, err = rec.recognizeFile(imgPath, 1, jitter)
 		if err != nil || len(faces) != 1 {
 			return
 		}
@@ -175,7 +179,7 @@ func (rec *Recognizer) RecognizeSingleFile(imgPath string) (face *Face, err erro
 	return
 }
 
-// SetSamples takes a slive of Vectors and cats then sets known vectors so you can classify after training.
+// SetSamples takes a slice of Vectors and cats then sets known vectors so you can classify after training.
 // This is thread-safe.
 func (rec *Recognizer) SetSamples(samples []Vector, cats []int32) (err error) {
 	if rec.closed {
@@ -213,4 +217,20 @@ func (rec *Recognizer) Close() (err error) {
 	}
 	err = closedError
 	return
+}
+
+// Probability calculates the the probability two faces are the same
+func (f *Face) Probability(f2 Face) float64 {
+	dist := euclidean(f.Vector, f2.Vector)
+	return (1 - (dist / 4))
+
+}
+
+// euclidian calculates the euclidean distance of the two face vectors
+func euclidean(a, b Vector) float64 {
+	var sum float64
+	for i := 0; i < len(a); i++ {
+		sum = sum + math.Pow((float64(a[i])-float64(b[i])), 2.0)
+	}
+	return sum
 }
