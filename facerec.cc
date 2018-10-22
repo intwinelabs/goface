@@ -108,18 +108,9 @@ class FaceRec
 			{
 				// All this does is make 100 copies of img, all slightly jittered by being zoomed,
 				// rotated, and translated a little bit differently. They are also randomly mirrored.
-				thread_local dlib::rand rnd;
-				
-				std::vector<matrix<rgb_pixel>> jittered_imgs;
-				for (int i = 0; i < 100; ++i)
-				{
-					jittered_imgs.push_back(jitter_image(face_imgs[i],rnd));
-					fprintf(lFile, "%d\n", i);
-				}
-
 				{
 					lock_guard<std::mutex> lock(net_mutex_);
-					descrs.push_back(mean(mat(net_(jittered_imgs))));
+					descrs.push_back(mean(mat(net_(jitter_face(face_imgs[i])))));
 					fprintf(lFile, "%s\n", "push_back");
 				}
 
@@ -153,6 +144,22 @@ class FaceRec
 	anet_type net_;
 	std::vector<descriptor> samples_;
 	unordered_map<int, int> cats_;
+
+	std::vector<matrix<rgb_pixel>> jitter_face(
+		const matrix<rgb_pixel>& img
+	)
+	{
+		// All this function does is make 100 copies of img, all slightly jittered by being
+		// zoomed, rotated, and translated a little bit differently. They are also randomly
+		// mirrored left to right.
+		thread_local dlib::rand rnd;
+
+		std::vector<matrix<rgb_pixel>> crops; 
+		for (int i = 0; i < 100; ++i)
+			crops.push_back(jitter_image(img,rnd));
+
+		return crops;
+	}
 };
 
 // Plain C interface for Go.
