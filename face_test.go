@@ -22,7 +22,7 @@ func TestFaceRecognizer(t *testing.T) {
 	// Test image with 7 faces
 	testImageGroupOfYoungPeople := filepath.Join(testImgsDir, "group_of_young_people.jpg")
 	// Recognize faces in that image
-	faces, err := rec.RecognizeFile(testImageGroupOfYoungPeople)
+	faces, err := rec.RecognizeFile(testImageGroupOfYoungPeople, 5)
 	assert.Nil(err)
 	assert.Equal(7, len(faces))
 	spew.Dump(faces)
@@ -30,7 +30,7 @@ func TestFaceRecognizer(t *testing.T) {
 	// Test image with colin powell group
 	testImageGroupColinPowell := filepath.Join(testImgsDir, "group_colin_powell.jpg")
 	// Recognize faces in that image
-	cpFaces, err := rec.RecognizeFile(testImageGroupColinPowell)
+	cpFaces, err := rec.RecognizeFile(testImageGroupColinPowell, 5)
 	assert.Nil(err)
 	assert.Equal(5, len(cpFaces))
 	spew.Dump(cpFaces)
@@ -50,7 +50,7 @@ func TestFaceRecognizer(t *testing.T) {
 
 	// Test the classification of some unknown colin image
 	testImageColin := filepath.Join(testImgsDir, "Colin_Powell/Colin_Powell_0001.jpg")
-	colinFace, err := rec.RecognizeSingleFile(testImageColin)
+	colinFace, err := rec.RecognizeSingleFile(testImageColin, 5)
 	assert.Nil(err)
 	assert.NotNil(colinFace)
 	catID, err := rec.Classify(colinFace.Vector)
@@ -82,7 +82,7 @@ func TestImageLoadError(t *testing.T) {
 	assert.Nil(err)
 	assert.NotNil(rec)
 
-	_, err = rec.Recognize([]byte{1, 2, 3})
+	_, err = rec.Recognize([]byte{1, 2, 3}, 1)
 	assert.Equal(ImageLoadError("jpeg_mem_loader: decode error: Not a JPEG file: starts with 0x01 0x02"), err)
 }
 
