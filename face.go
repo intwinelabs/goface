@@ -28,8 +28,8 @@ type Recognizer struct {
 
 // Face holds coordinates and vector of a face
 type Face struct {
-	Rectangle image.Rectangle
-	Vector    Vector
+	Rectangle image.Rectangle `json:"rectangle"`
+	Vector    Vector          `json:"vector"`
 }
 
 // Vector holds 128-dimensional feature vector
