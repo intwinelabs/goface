@@ -9,7 +9,6 @@ import "C"
 import (
 	"image"
 	"io/ioutil"
-	"math"
 	"os"
 	"unsafe"
 )
@@ -219,18 +218,23 @@ func (rec *Recognizer) Close() (err error) {
 	return
 }
 
-// Probability calculates the the probability two faces are the same
-func (f *Face) Probability(f2 Face) float64 {
-	dist := euclidean(f.Vector, f2.Vector)
+// Probability calculates the the probability two faces are the same.
+// Mathematically if the probability is 0.85 or greater it most likely the same person.
+func (f *Face) Probability(f2 Face) float32 {
+	dist := f.Euclidean(f2)
 	return (1 - (dist / 4))
 
 }
 
-// euclidian calculates the euclidean distance of the two face vectors
-func euclidean(a, b Vector) float64 {
-	var sum float64
+// Euclidean calculates the euclidean distance of the two face.
+// Mathematically if the distance is 0.6 or less it most likely the same person.
+func (f *Face) Euclidean(f2 Face) float32 {
+	a := f.Vector
+	b := f2.Vector
+	var sum float32
 	for i := 0; i < len(a); i++ {
-		sum = sum + math.Pow((float64(a[i])-float64(b[i])), 2.0)
+		d := a[i] - b[i]
+		sum = sum + (d * d)
 	}
 	return sum
 }

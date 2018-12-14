@@ -4,7 +4,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -25,7 +24,6 @@ func TestFaceRecognizer(t *testing.T) {
 	faces, err := rec.RecognizeFile(testImageGroupOfYoungPeople, 5)
 	assert.Nil(err)
 	assert.Equal(7, len(faces))
-	spew.Dump(faces)
 
 	// Test image with colin powell group
 	testImageGroupColinPowell := filepath.Join(testImgsDir, "group_colin_powell.jpg")
@@ -33,7 +31,6 @@ func TestFaceRecognizer(t *testing.T) {
 	cpFaces, err := rec.RecognizeFile(testImageGroupColinPowell, 5)
 	assert.Nil(err)
 	assert.Equal(5, len(cpFaces))
-	spew.Dump(cpFaces)
 
 	var samples []Vector
 	var cats []int32
@@ -43,7 +40,7 @@ func TestFaceRecognizer(t *testing.T) {
 		cats = append(cats, int32(i))
 	}
 	// Name the categories, i.e. people in the image
-	labels := []string{"Jm", "Judy", "Colin", "Maria", "Juan"}
+	labels := []string{"Jim", "Judy", "Colin", "Maria", "Juan"}
 	// Pass samples to the recognizer
 	err = rec.SetSamples(samples, cats)
 	assert.Nil(err)
@@ -57,6 +54,12 @@ func TestFaceRecognizer(t *testing.T) {
 	assert.Nil(err)
 	assert.False(catID < 0)
 	assert.Equal("Colin", labels[catID])
+
+	// Test calculations
+	euc := colinFace.Euclidean(cpFaces[2])
+	assert.True(euc < 0.16)
+	prob := colinFace.Probability(cpFaces[2])
+	assert.True(prob > 0.955)
 
 }
 
