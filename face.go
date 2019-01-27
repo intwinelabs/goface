@@ -9,6 +9,7 @@ import "C"
 import (
 	"image"
 	"io/ioutil"
+	"math"
 	"os"
 	"unsafe"
 )
@@ -32,7 +33,10 @@ type Face struct {
 }
 
 // Vector holds 128-dimensional feature vector
-type Vector [128]float32
+type Vector [128]float64
+
+// Vector32 holds 128-dimensional feature vector
+type Vector32 [128]float32
 
 // New creates new face with the provided parameters
 func NewFace(r image.Rectangle, d Vector) Face {
@@ -103,8 +107,24 @@ func (rec *Recognizer) recognize(imgData []byte, maxFaces, jitter int) (faces []
 		x1 := int(rData[i*rectLen+2])
 		y1 := int(rData[i*rectLen+3])
 		face.Rectangle = image.Rect(x0, y0, x1, y1)
-		copy(face.Vector[:], dData[i*vectLen:(i+1)*vectLen])
+		vect64 := castTo64(dData[i*vectLen : (i+1)*vectLen])
+		copy(face.Vector[:], vect64)
 		faces = append(faces, face)
+	}
+	return
+}
+
+func castTo64(data []float32) (ret []float64) {
+	ret = make([]float64, len(data))
+	for i, val := range data {
+		ret[i] = float64(val)
+	}
+	return
+}
+
+func castTo32(data Vector) (ret Vector32) {
+	for i, val := range data {
+		ret[i] = float32(val)
 	}
 	return
 }
@@ -188,7 +208,11 @@ func (rec *Recognizer) SetSamples(samples []Vector, cats []int32) (err error) {
 	if len(samples) == 0 || len(samples) != len(cats) {
 		return
 	}
-	cSamples := (*C.float)(unsafe.Pointer(&samples[0]))
+	samples32 := make([]Vector32, len(samples))
+	for i, vect := range samples {
+		samples32[i] = castTo32(vect)
+	}
+	cSamples := (*C.float)(unsafe.Pointer(&samples32[0]))
 	cCats := (*C.int32_t)(unsafe.Pointer(&cats[0]))
 	cLen := C.int(len(samples))
 	C.facerec_set_samples(rec.ptr, cSamples, cCats, cLen)
@@ -199,7 +223,8 @@ func (rec *Recognizer) SetSamples(samples []Vector, cats []int32) (err error) {
 // This is thread-safe.
 func (rec *Recognizer) Classify(testSample Vector) (class int, err error) {
 	if !rec.closed {
-		cTestSample := (*C.float)(unsafe.Pointer(&testSample))
+		testSample32 := castTo32(testSample)
+		cTestSample := (*C.float)(unsafe.Pointer(&testSample32))
 		class = int(C.facerec_classify(rec.ptr, cTestSample))
 		return
 	}
@@ -220,7 +245,7 @@ func (rec *Recognizer) Close() (err error) {
 
 // Probability calculates the the probability two faces are the same.
 // Mathematically if the probability is 0.85 or greater it most likely the same person.
-func (f *Face) Probability(f2 Face) float32 {
+func (f *Face) Probability(f2 Face) float64 {
 	dist := f.Euclidean(f2)
 	return (1 - (dist / 4))
 
@@ -228,13 +253,12 @@ func (f *Face) Probability(f2 Face) float32 {
 
 // Euclidean calculates the euclidean distance of the two face.
 // Mathematically if the distance is 0.6 or less it most likely the same person.
-func (f *Face) Euclidean(f2 Face) float32 {
+func (f *Face) Euclidean(f2 Face) float64 {
 	a := f.Vector
 	b := f2.Vector
-	var sum float32
+	var sum float64
 	for i := 0; i < len(a); i++ {
-		d := a[i] - b[i]
-		sum = sum + (d * d)
+		sum += math.Pow((a[i] - b[i]), 2.0)
 	}
-	return sum
+	return math.Sqrt(sum)
 }
