@@ -47,8 +47,10 @@ using anet_type = loss_metric<fc_no_bias<128,avg_pool_everything<
                             >>>>>>>>>>>>;
 
 static const size_t RECT_LEN = 4;
+static const size_t FEATURE_LEN = 2 * 68;
 static const size_t DESCR_LEN = 128;
 static const size_t RECT_SIZE = RECT_LEN * sizeof(long);
+static const size_t FEATURE_SIZE = FEATURE_LEN * sizeof(long);
 static const size_t DESCR_SIZE = DESCR_LEN * sizeof(float);
 
 class FaceRec
@@ -59,17 +61,18 @@ class FaceRec
 		detector_ = get_frontal_face_detector();
 
 		string dir = model_dir;
-		string shape_predictor_path = dir + "/shape_predictor_5_face_landmarks.dat";
+		string shape_predictor_path = dir + "/shape_predictor_68_face_landmarks.dat";
 		string resnet_path = dir + "/dlib_face_recognition_resnet_model_v1.dat";
 
 		deserialize(shape_predictor_path) >> sp_;
 		deserialize(resnet_path) >> net_;
 	}
 
-	pair<std::vector<rectangle>, std::vector<descriptor>>
+	tuple<std::vector<rectangle>, std::vector<full_object_detection>, std::vector<descriptor>>
 	Recognize(const matrix<rgb_pixel> &img, int max_faces, int jitter)
 	{
 		std::vector<rectangle> rects;
+		std::vector<full_object_detection> shapes;
 		std::vector<descriptor> descrs;
 		
 		{
@@ -80,7 +83,7 @@ class FaceRec
 		// Short circuit.
 		if (rects.size() == 0 || (max_faces > 0 && rects.size() > (size_t)max_faces))
 		{
-			return {move(rects), move(descrs)};
+			return {move(rects), move(shapes), move(descrs)};
 		}
 
 		sort(rects.begin(), rects.end());
@@ -89,6 +92,7 @@ class FaceRec
 		for (const auto &rect : rects)
 		{
 			auto shape = sp_(img, rect);
+			shapes.push_back(shape);
 			matrix<rgb_pixel> face_chip;
 			extract_image_chip(img, get_face_chip_details(shape, 150, 0.25), face_chip);
 			face_imgs.push_back(move(face_chip));
@@ -97,11 +101,11 @@ class FaceRec
 		
 		{
 			// The face recognition accuracy is being improved by jittering the face descriptors.
-			// In particular, to get 99.38% on the LFW benchmark you need to use the jitter_image()
+			// In particular, to get 99.38% on the LFW benchmark you need to use the jitter_face()
 			// routine to compute the descriptors
 			for (size_t i = 0; i < face_imgs.size(); ++i)
 			{
-				// All this does is make 100 copies of img, all slightly jittered by being zoomed,
+				// All this does is make jitterN copies of img, all slightly jittered by being zoomed,
 				// rotated, and translated a little bit differently. They are also randomly mirrored.
 				{
 					lock_guard<std::mutex> lock(net_mutex_);
@@ -110,7 +114,7 @@ class FaceRec
 
 			}
 		}
-		return {move(rects), move(descrs)};
+		return {move(rects), move(shapes), move(descrs)};
 	}
 
 	void SetSamples(std::vector<descriptor> &&samples, unordered_map<int, int> &&cats)
@@ -184,11 +188,13 @@ faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int m
 	FaceRec *cls = (FaceRec *)(rec->cls);
 	matrix<rgb_pixel> img;
 	std::vector<rectangle> rects;
+	std::vector<full_object_detection> shapes;
 	std::vector<descriptor> descrs;
+	int i, j;
 	try
 	{
 		load_mem_jpeg(img, img_data, len);
-		tie(rects, descrs) = cls->Recognize(img, max_faces, jitter);
+		tie(rects, shapes, descrs) = cls->Recognize(img, max_faces, jitter);
 	}
 	catch (image_load_error &e)
 	{
@@ -206,7 +212,7 @@ faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int m
 	if (ret->num_faces == 0)
 		return ret;
 	ret->rectangles = (long *)malloc(ret->num_faces * RECT_SIZE);
-	for (int i = 0; i < ret->num_faces; i++)
+	for (i = 0; i < ret->num_faces; i++)
 	{
 		long *dst = ret->rectangles + i * 4;
 		dst[0] = rects[i].left();
@@ -214,8 +220,19 @@ faceret *facerec_recognize(facerec *rec, const uint8_t *img_data, int len, int m
 		dst[2] = rects[i].right();
 		dst[3] = rects[i].bottom();
 	}
+	ret->features = (long *)malloc(ret->num_faces * FEATURE_SIZE);
+	for (i =0; i < ret->num_faces; i++ )
+	{
+		for (j=0; j < 68; j++)
+		{
+			//cout << "[" << i << "] pixel position of part:  " << shapes[i].part(j) << endl;
+			long *dst = ret->features + ((i * 68) + j) * 2;
+			dst[0] = shapes[i].part(j).x();
+			dst[1] = shapes[i].part(j).y();
+		}
+	}
 	ret->descriptors = (float *)malloc(ret->num_faces * DESCR_SIZE);
-	for (int i = 0; i < ret->num_faces; i++)
+	for (i = 0; i < ret->num_faces; i++)
 	{
 		void *dst = (uint8_t *)(ret->descriptors) + i * DESCR_SIZE;
 		void *src = (void *)&descrs[i](0, 0);

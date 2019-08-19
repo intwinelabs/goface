@@ -20,6 +20,8 @@ models: ## Downloads models from our public blob storage
 	@cd models && bunzip2 dlib_face_recognition_resnet_model_v1.dat.bz2
 	@cd models && wget https://intwinepublic.blob.core.windows.net/ai-train-data/shape_predictor_5_face_landmarks.dat.bz2
 	@cd models && bunzip2 shape_predictor_5_face_landmarks.dat.bz2 
+	@cd models && wget https://intwinepublic.blob.core.windows.net/ai-train-data/shape_predictor_68_face_landmarks.dat.bz2
+	@cd models && bunzip2 shape_predictor_68_face_landmarks.dat.bz2 
 
 test:  ## Runs tests on the library, this is slow because of the C++ build time
 	@wget https://intwinepublic.blob.core.windows.net/ai-train-data/goface_tests.tar.gz

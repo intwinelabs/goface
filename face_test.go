@@ -40,6 +40,10 @@ func TestFaceRecognizer(t *testing.T) {
 	cpFaces, err := rec.RecognizeFile(testImageGroupColinPowell, 5)
 	assert.Nil(err)
 	assert.Equal(5, len(cpFaces))
+	assert.Equal(216,cpFaces[0].Features[0].X)
+	assert.Equal(189,cpFaces[0].Features[0].Y)
+	assert.Equal(254,cpFaces[0].Features[67].X)
+	assert.Equal(244,cpFaces[0].Features[67].Y)
 
 	// write out the img with numbers on the faces recognized
 	imgIn, _ := os.Open(testImageGroupColinPowell)
@@ -51,8 +55,11 @@ func TestFaceRecognizer(t *testing.T) {
 	draw.Draw(imgRGB, imgRGB.Bounds(), img, bounds.Min, draw.Src)
 	for i, face := range cpFaces {
 		addImageLabel(imgRGB, face.Rectangle.Min.X+(face.Rectangle.Size().X/2), face.Rectangle.Min.Y+(face.Rectangle.Size().Y/2), fmt.Sprintf("%v", i))
+		for _, p := range face.Features {
+			addImageLabel(imgRGB, p.X, p.Y, "+")
+		}
 	}
-	testImageGroupOfYoungPeopleAnalysis := filepath.Join(testImgsDir, "group_of_young_people_analysis.jpg")
+	testImageGroupOfYoungPeopleAnalysis := filepath.Join(testImgsDir, "group_colin_powell_analysis.jpg")
 	imgOut, err := os.Create(testImageGroupOfYoungPeopleAnalysis)
 	assert.Nil(err)
 	defer imgOut.Close()
@@ -105,7 +112,7 @@ func TestSerializationError(t *testing.T) {
 	assert := assert.New(t)
 
 	_, err := NewRecognizer("/notexist")
-	assert.Equal(SerializationError("Unable to open /notexist/shape_predictor_5_face_landmarks.dat for reading."), err)
+	assert.Equal(SerializationError("Unable to open /notexist/shape_predictor_68_face_landmarks.dat for reading."), err)
 }
 
 func TestInit(t *testing.T) {

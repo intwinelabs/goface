@@ -15,8 +15,9 @@ import (
 )
 
 const (
-	rectLen = 4
-	vectLen = 128
+	rectLen    = 4
+	featureLen = 68 * 2
+	vectLen    = 128
 )
 
 // A Recognizer creates face vectors for provided images and can also classify
@@ -29,6 +30,7 @@ type Recognizer struct {
 // Face holds coordinates and vector of a face
 type Face struct {
 	Rectangle image.Rectangle `json:"rectangle"`
+	Features  []image.Point   `json:"features"`
 	Vector    Vector          `json:"vector"`
 }
 
@@ -40,7 +42,10 @@ type Vector32 [128]float32
 
 // New creates new face with the provided parameters
 func NewFace(r image.Rectangle, d Vector) Face {
-	return Face{r, d}
+	return Face{
+		Rectangle: r,
+		Vector:    d,
+	}
 }
 
 // NewRecognizer returns a new recognizer. modelDir points to the dir with:
@@ -90,11 +95,17 @@ func (rec *Recognizer) recognize(imgData []byte, maxFaces, jitter int) (faces []
 	// Copy c++ faces data to Go struct
 	// descriptors is the var for a face vector in the c++ code, because we use  std::vector
 	defer C.free(unsafe.Pointer(ret.rectangles))
+	defer C.free(unsafe.Pointer(ret.features))
 	defer C.free(unsafe.Pointer(ret.descriptors))
 
 	rDataLen := numFaces * rectLen
 	rDataPtr := unsafe.Pointer(ret.rectangles)
 	rData := (*[1 << 30]C.long)(rDataPtr)[:rDataLen:rDataLen]
+
+	fDataLen := numFaces * featureLen
+	fDataPtr := unsafe.Pointer(ret.features)
+	fData := (*[1 << 30]C.long)(fDataPtr)[:fDataLen:fDataLen]
+	features := calcFeaturePoints(fData)
 
 	dDataLen := numFaces * vectLen
 	dDataPtr := unsafe.Pointer(ret.descriptors)
@@ -107,11 +118,30 @@ func (rec *Recognizer) recognize(imgData []byte, maxFaces, jitter int) (faces []
 		x1 := int(rData[i*rectLen+2])
 		y1 := int(rData[i*rectLen+3])
 		face.Rectangle = image.Rect(x0, y0, x1, y1)
+		face.Features = features[i]
 		vect64 := castTo64(dData[i*vectLen : (i+1)*vectLen])
 		copy(face.Vector[:], vect64)
 		faces = append(faces, face)
 	}
 	return
+}
+
+func calcFeaturePoints(featureData []C.long) [][]image.Point {
+	features := make([][]image.Point, len(featureData)/featureLen)
+	f := make([]C.long, featureLen)
+	// iterate over faces in features
+	numFaces := len(featureData)/featureLen
+	for i := 0; i < numFaces; i++ {
+		f = featureData[:featureLen]
+		featureData = featureData[featureLen:len(featureData)]
+		ps := make([]image.Point, featureLen/2)
+		for j, k := 0, 0; j < featureLen; j, k = j+2, k+1 {
+			p := image.Pt(int(f[j]), int(f[j+1]))
+			ps[k] = p
+		}
+		features[i] = ps
+	}
+	return features
 }
 
 func castTo64(data []float32) (ret []float64) {
