@@ -23,7 +23,7 @@ const (
 // A Recognizer creates face vectors for provided images and can also classify
 // them into categories
 type Recognizer struct {
-	ptr    *_Ctype_struct_facerec
+	ptr    *C.facerec
 	closed bool
 }
 
@@ -130,7 +130,7 @@ func calcFeaturePoints(featureData []C.long) [][]image.Point {
 	features := make([][]image.Point, len(featureData)/featureLen)
 	f := make([]C.long, featureLen)
 	// iterate over faces in features
-	numFaces := len(featureData)/featureLen
+	numFaces := len(featureData) / featureLen
 	for i := 0; i < numFaces; i++ {
 		f = featureData[:featureLen]
 		featureData = featureData[featureLen:len(featureData)]
